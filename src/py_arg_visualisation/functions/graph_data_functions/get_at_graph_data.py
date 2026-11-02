@@ -1,9 +1,36 @@
 from typing import List, Dict
 
 from py_arg.aspic_classes.argumentation_theory import ArgumentationTheory
+from py_arg.aspic_classes.instantiated_argument import InstantiatedArgument
+from py_arg.aspic_classes.strict_rule import StrictRule
 from py_arg_visualisation.functions.graph_data_functions.get_color import get_color
 from py_arg_visualisation.functions.ordering_functions.get_ordering_by_specification \
     import get_ordering_by_specification
+
+
+def get_rule_name_label(argument: InstantiatedArgument) -> str:
+    """
+    Calculate a compact label for an argument: the names of the rules it applies (bottom-up) and its conclusion.
+    Premise-based arguments keep their premise as label. Strict rules have numeric ids, so they are prefixed with s.
+
+    :param argument: The argument that needs a label.
+    """
+    if argument.top_rule is None:
+        return argument.short_name
+
+    rule_names = []
+
+    def collect_rule_names(sub_argument: InstantiatedArgument):
+        for direct_sub_argument in sorted(sub_argument.direct_sub_arguments, key=lambda arg: arg.name):
+            collect_rule_names(direct_sub_argument)
+        if sub_argument.top_rule is not None:
+            rule = sub_argument.top_rule
+            rule_name = 's' + str(rule.id) if isinstance(rule, StrictRule) else str(rule.id)
+            if rule_name not in rule_names:
+                rule_names.append(rule_name)
+
+    collect_rule_names(argument)
+    return ', '.join(rule_names) + ': ' + str(argument.conclusion)
 
 
 def get_argumentation_theory_graph_data(argumentation_theory: ArgumentationTheory, ordering_specification: str,
@@ -49,7 +76,7 @@ def get_argumentation_theory_graph_data(argumentation_theory: ArgumentationTheor
             color = get_color('red', color_blind_mode)
         else:
             color = get_color('gray', color_blind_mode)
-        data_nodes.append({'id': readable_id, 'label': argument.short_name, 'color': color})
+        data_nodes.append({'id': readable_id, 'label': get_rule_name_label(argument), 'color': color})
 
     ordering = get_ordering_by_specification(argumentation_theory, ordering_specification)
     data_edges = []

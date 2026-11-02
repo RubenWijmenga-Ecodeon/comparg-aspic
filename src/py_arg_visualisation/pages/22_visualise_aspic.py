@@ -27,6 +27,15 @@ from py_arg_visualisation.functions.ordering_functions.get_ordering_by_specifica
 
 dash.register_page(__name__, name='Visualise ASPIC+ AT', title='Visualise ASPIC+ AT')
 
+# Compact layout: narrow wrapping boxes instead of wide ellipses, and stronger gravity with short springs so the graph
+# needs less zooming out (and its labels stay drawn) when it is fitted into the canvas.
+ARGUMENT_GRAPH_OPTIONS = {
+    'height': '500px',
+    'nodes': {'shape': 'box', 'widthConstraint': {'maximum': 110}, 'margin': 6},
+    'physics': {'barnesHut': {'gravitationalConstant': -800, 'centralGravity': 1.2, 'springLength': 40,
+                              'avoidOverlap': 0.5}}
+}
+
 
 def get_aspic_layout(aspic_setting, structured_evaluation, structured_explanation):
     left_column = dbc.Col(
@@ -39,7 +48,7 @@ def get_aspic_layout(aspic_setting, structured_evaluation, structured_explanatio
     right_column = dbc.Col([
         dbc.Row([
             dbc.Card(visdcc.Network(data={'nodes': [], 'edges': []}, id='structured-argumentation-graph',
-                                    options={'height': '500px'}), body=True),
+                                    options=ARGUMENT_GRAPH_OPTIONS), body=True),
         ])
     ])
     return dbc.Row([left_column, right_column])
@@ -217,8 +226,18 @@ def generate_random_argumentation_theory(nr_of_clicks: int):
     return '', '', '', '', '', ''
 
 
+# visdcc updates the nodes in place and never refits the view, so large graphs overflow the canvas. Lay the new nodes
+# out in one stabilization run, then freeze physics (otherwise the compact layout keeps drifting past the fitted view)
+# and fit. Physics is switched back on first so the next update is laid out again.
+FIT_GRAPH_WHEN_STABILIZED = ("this.net.setOptions({physics: {enabled: true}});"
+                             "this.net.once('stabilizationIterationsDone', () => {"
+                             "this.net.setOptions({physics: {enabled: false}}); this.net.fit();});"
+                             "this.net.stabilize(400);")
+
+
 @callback(
     Output('structured-argumentation-graph', 'data'),
+    Output('structured-argumentation-graph', 'run'),
     Input('aspic-axioms', 'value'),
     Input('aspic-ordinary-premises', 'value'),
     Input('aspic-strict-rules', 'value'),
@@ -248,7 +267,8 @@ def create_argumentation_theory(axioms_str: str, ordinary_premises_str: str, str
         arg_theory = ArgumentationTheory(ArgumentationSystem({}, {}, [], []), [], [])
 
     # Generate the graph data for this argumentation theory
-    return get_argumentation_theory_graph_data(arg_theory, ordering_specification, selected_arguments, color_blind_mode)
+    return get_argumentation_theory_graph_data(arg_theory, ordering_specification, selected_arguments,
+                                               color_blind_mode), FIT_GRAPH_WHEN_STABILIZED
 
 
 @callback(
