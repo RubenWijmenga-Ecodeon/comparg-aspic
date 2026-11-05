@@ -1,10 +1,14 @@
+import hmac
 import json
+import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 
 import dash
 import dash_bootstrap_components as dbc
+import flask
 import visdcc
 from dash import html, callback, Input, Output, State, ALL, dcc
 from dash.exceptions import PreventUpdate
@@ -173,11 +177,24 @@ def get_structured_explanation_specification_div():
     ])
 
 
-def get_page_layout(stored_theory: Optional[Dict[str, str]] = None, notice: str = ''):
+def get_save_div(theory_id: str):
+    return dbc.Row([
+        dcc.Store(id='stored-theory-id', data=theory_id),
+        dbc.Col(dbc.Input(id='stored-theory-save-password', type='password',
+                          placeholder='Save password (if the server asks for one)'), width=4),
+        dbc.Col(dbc.Button(f'Save as stored theory "{theory_id}"', id='stored-theory-save-button',
+                           color='primary'), width='auto'),
+        dbc.Col(html.Span(id='stored-theory-save-status'), className='align-self-center'),
+    ], className='mb-3')
+
+
+def get_page_layout(stored_theory: Optional[Dict[str, str]] = None, notice: str = '',
+                    theory_id: Optional[str] = None):
     return html.Div(
         children=[
             html.H1('Visualisation of ASPIC+ argumentation theories'),
             html.P(notice, className='text-danger') if notice else None,
+            get_save_div(theory_id) if theory_id else None,
             get_aspic_layout(get_aspic_setting_specification_div(stored_theory),
                              get_structured_evaluation_specification_div(),
                              get_structured_explanation_specification_div())
@@ -194,16 +211,71 @@ STORED_THEORIES_DIR = Path(__file__).resolve().parents[3] / 'stored_theories'
 STORED_THEORY_ID_PATTERN = re.compile(r'[A-Za-z0-9_-]+')
 
 
+# Saving overwrites (or creates) stored_theories/<id>.json. If the PYARG_SAVE_PASSWORD environment variable is set, a save
+# needs that password. Without it, only requests from the machine itself may save, which allows saving while running
+# locally but not through a public reverse proxy, so nobody can overwrite a theory just by guessing its link.
+SAVE_PASSWORD_VARIABLE = 'PYARG_SAVE_PASSWORD'
+LOOPBACK_ADDRESSES = {'127.0.0.1', '::1'}
+
+
 def get_stored_theory_layout(theory_id: str = '', **_other_path_variables):
-    theory_path = STORED_THEORIES_DIR / f'{theory_id}.json'
     # The id comes from the URL, so only plain names are looked up (no path separators or dots).
-    if not STORED_THEORY_ID_PATTERN.fullmatch(theory_id) or not theory_path.is_file():
+    if not STORED_THEORY_ID_PATTERN.fullmatch(theory_id):
         return get_page_layout(notice=f'There is no stored theory "{theory_id}".')
-    return get_page_layout(json.loads(theory_path.read_text(encoding='utf-8')))
+    theory_path = STORED_THEORIES_DIR / f'{theory_id}.json'
+    if not theory_path.is_file():
+        return get_page_layout(notice=f'There is no stored theory "{theory_id}" yet; saving creates it.',
+                               theory_id=theory_id)
+    return get_page_layout(json.loads(theory_path.read_text(encoding='utf-8')), theory_id=theory_id)
 
 
 dash.register_page(f'{__name__}_stored', path_template='/22-visualise-aspic/stored/<theory_id>',
                    name='Stored ASPIC+ AT', title='Visualise ASPIC+ AT', layout=get_stored_theory_layout)
+
+
+def _may_save(password: Optional[str]) -> bool:
+    required_password = os.environ.get(SAVE_PASSWORD_VARIABLE)
+    if required_password:
+        return bool(password) and hmac.compare_digest(password.encode(), required_password.encode())
+    return flask.request.remote_addr in LOOPBACK_ADDRESSES
+
+
+@callback(
+    Output('stored-theory-save-status', 'children'),
+    Input('stored-theory-save-button', 'n_clicks'),
+    State('stored-theory-id', 'data'),
+    State('stored-theory-save-password', 'value'),
+    State('aspic-axioms', 'value'),
+    State('aspic-ordinary-premises', 'value'),
+    State('ordinary-prem-preferences', 'value'),
+    State('aspic-strict-rules', 'value'),
+    State('aspic-defeasible-rules', 'value'),
+    State('defeasible-rule-preferences', 'value'),
+    State('ordering-choice', 'value'),
+    State('ordering-link', 'value'),
+    prevent_initial_call=True
+)
+def save_stored_theory(_nr_of_clicks: int, theory_id: str, password: Optional[str], axioms_str: str,
+                       ordinary_premises_str: str, ordinary_premise_preferences_str: str, strict_rules_str: str,
+                       defeasible_rules_str: str, defeasible_rule_preferences_str: str,
+                       ordering_choice_value: str, ordering_link_value: str):
+    if not theory_id or not STORED_THEORY_ID_PATTERN.fullmatch(theory_id):
+        raise PreventUpdate
+    if not _may_save(password):
+        return html.Span('Not saved: wrong or missing save password.', className='text-danger')
+
+    theory = {'axioms': axioms_str or '', 'ordinary_premises': ordinary_premises_str or '',
+              'ordinary_premise_preferences': ordinary_premise_preferences_str or '',
+              'strict_rules': strict_rules_str or '', 'defeasible_rules': defeasible_rules_str or '',
+              'defeasible_rule_preferences': defeasible_rule_preferences_str or '',
+              'ordering_choice': ordering_choice_value, 'ordering_link': ordering_link_value}
+    STORED_THEORIES_DIR.mkdir(exist_ok=True)
+    theory_path = STORED_THEORIES_DIR / f'{theory_id}.json'
+    # Write to a temporary file first so that a failed write never leaves a half-written theory behind.
+    temporary_path = theory_path.with_suffix('.json.tmp')
+    temporary_path.write_text(json.dumps(theory, indent=2) + '\n', encoding='utf-8')
+    os.replace(temporary_path, theory_path)
+    return html.Span(f'Saved at {datetime.now():%H:%M:%S}.', className='text-success')
 
 
 @callback(

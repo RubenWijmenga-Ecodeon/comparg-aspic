@@ -136,6 +136,12 @@ Under the boxes, choose the **ordering** (democratic or elitist, last link or we
 
 `stored_theories/` is in `.gitignore`, so stored models are not pushed to a public repository; copy the files to the server yourself. A file is read on every page load, so adding or editing one needs no restart.
 
+A stored page has a **Save** button that overwrites `stored_theories/<id>.json` with the current boxes (or creates it, for an id that does not exist yet). Who may save:
+
+- If the environment variable `PYARG_SAVE_PASSWORD` is set, anyone who types that password next to the button.
+- Otherwise only requests from the machine itself (`127.0.0.1` / `::1`). Saving then works when you run PyArg locally, but not through a public reverse proxy, so nobody can overwrite a theory by guessing its link.
+
+On a server, set the password in the service, for example with a line `Environment=PYARG_SAVE_PASSWORD=<your password>` in the systemd unit.
 ### Translating a TOAST model
 
 | TOAST | Here |
