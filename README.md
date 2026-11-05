@@ -142,6 +142,8 @@ A stored page has a **Save** button that overwrites `stored_theories/<id>.json` 
 - Otherwise only requests from the machine itself (`127.0.0.1` / `::1`). Saving then works when you run PyArg locally, but not through a public reverse proxy, so nobody can overwrite a theory by guessing its link.
 
 On a server, set the password in the service, for example with a line `Environment=PYARG_SAVE_PASSWORD=<your password>` in the systemd unit.
+
+The extensions in the Evaluation panel each have a copy button, and the copy button next to the heading copies all extensions shown, one per line.
 ### Translating a TOAST model
 
 | TOAST | Here |

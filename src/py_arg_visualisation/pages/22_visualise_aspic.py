@@ -435,6 +435,7 @@ def evaluate_structured_argumentation_framework(axioms_str: str, ordinary_premis
     # Some semantics have very many extensions (a theory with 31 arguments can have over a million admissible sets);
     # rendering a button for each would freeze the browser.
     extension_buttons = []
+    extension_texts = []
     for extension_number, extension in enumerate(extensions[:MAX_EXTENSION_BUTTONS], start=1):
         out_arguments = {attacked for attacked in arg_framework.arguments
                          if any(argument in arg_framework.get_incoming_defeat_arguments(attacked)
@@ -450,8 +451,13 @@ def evaluate_structured_argumentation_framework(axioms_str: str, ordinary_premis
         extension_out_str = '+'.join(argument.name for argument in sorted(out_arguments))
         extension_undecided_str = '+'.join(argument.name for argument in sorted(undecided_arguments))
         extension_long_str = '|'.join([extension_in_str, extension_undecided_str, extension_out_str])
-        extension_buttons.append(dbc.Button([extension_readable_str], color='secondary', className='m-1 text-start',
-                                            id={'type': 'extension-button', 'index': extension_long_str}))
+        # Button text cannot be selected (pressing it marks the extension), so each extension gets a copy button.
+        extension_texts.append(extension_readable_str)
+        extension_buttons.append(html.Div([
+            dbc.Button([extension_readable_str], color='secondary', className='m-1 text-start',
+                       id={'type': 'extension-button', 'index': extension_long_str}),
+            dcc.Clipboard(content=extension_readable_str, title='Copy this extension', className='m-1 fs-5'),
+        ], className='d-flex align-items-start'))
 
     accepted_formula_buttons = [dbc.Button(formula.s1, color='secondary',
                                            id={'type': 'formula-button-structured',
@@ -460,7 +466,10 @@ def evaluate_structured_argumentation_framework(axioms_str: str, ordinary_premis
 
     extension_count_note = f' (showing the first {MAX_EXTENSION_BUTTONS} of {len(extensions)})' \
         if len(extensions) > MAX_EXTENSION_BUTTONS else f' ({len(extensions)})'
-    return [html.B('The extension(s)' + extension_count_note + ':'),
+    return [html.Div([html.B('The extension(s)' + extension_count_note + ':'),
+                      dcc.Clipboard(content='\n'.join(extension_texts), title='Copy all extensions shown',
+                                    className='ms-2 fs-5')],
+                     className='d-flex align-items-center'),
             html.Div(extension_buttons),
             html.B('The accepted formula(s):'),
             html.Div(accepted_formula_buttons)]
