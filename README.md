@@ -6,13 +6,18 @@ Everything runs locally: you type the axioms, premises, rules and preferences in
 
 ## What this fork changes
 
-Only the ASPIC+ visualisation page (`Visualise > ASPIC+`) differs from upstream PyArg:
+On the ASPIC+ visualisation page (`Visualise > ASPIC+`):
 
 - **Rule names as node labels.** A node shows the rules an argument applies (bottom-up) and its conclusion, for example `r23, r24, r25: allowAI`, instead of the full nested argument. Premise-only arguments keep the premise as label; strict rules show as `s0`, `s1`, ... because PyArg numbers them.
 - **The graph fits the canvas.** After every change the graph is laid out once, frozen and zoomed to fit, so no node falls outside the canvas.
 - **Compact layout.** Nodes are narrow boxes with wrapping labels and are packed closer together, so large theories stay readable when zoomed out.
+- **Readable evaluation results.** The Evaluation panel numbers each extension and lists its conclusions; clicking one colours its arguments without re-laying out the graph. Results follow edits to the theory, the default semantics is grounded, and at most 100 extension buttons are shown.
 
-The rest of PyArg (the Python library, the other pages, the documentation) is unchanged. General PyArg documentation: https://daphneodekerken.github.io/PyArg/.
+In the Python library (`py_arg.algorithms.semantics`):
+
+- **Extensions that finish.** Upstream PyArg computes complete, preferred, stable, semi-stable, ideal, eager and admissible extensions by trying every labelling, which does not finish for a theory of about 30 arguments (and on a server shows up as "server doesn't respond"). This fork prunes that search, and derives stable and semi-stable extensions from the preferred and complete ones and ideal and eager extensions from their intersections. For a 31-argument theory every semantics now takes milliseconds, except admissible: that theory has over 1.6 million admissible sets, which still takes about 40 seconds to list.
+
+The rest of PyArg (the other pages, the documentation) is unchanged. General PyArg documentation: https://daphneodekerken.github.io/PyArg/.
 
 ## Requirements
 
@@ -30,19 +35,22 @@ Create a Python 3.11 virtual environment and install the dependencies, with eith
 
 ```bash
 python3.11 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt "numpy<2"
+.venv/bin/python -m pip install -r requirements.txt "numpy<2" "dash<3"
 ```
 
 or uv:
 
 ```bash
 uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python -r requirements.txt "numpy<2"
+uv pip install --python .venv/bin/python -r requirements.txt "numpy<2" "dash<3"
 ```
 
 On Windows, use `.venv\Scripts\python` instead of `.venv/bin/python`.
 
-The extra `"numpy<2"` matters: `requirements.txt` leaves NumPy unpinned, so pip installs NumPy 2, and the pinned pandas 1.5.3 then crashes on import with `numpy.dtype size changed`.
+The two extra pins matter, because `requirements.txt` leaves both packages unpinned:
+
+- `"numpy<2"`: with NumPy 2 the pinned pandas 1.5.3 crashes on import with `numpy.dtype size changed`.
+- `"dash<3"`: the pinned dash-bootstrap-components 1.4.2 is built for Dash 2. Under Dash 3 or 4 the panels on the page lose their titles and the Evaluation and Explanation panels never show results.
 
 ## Running
 
