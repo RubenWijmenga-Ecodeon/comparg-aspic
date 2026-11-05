@@ -127,7 +127,7 @@ def get_structured_evaluation_specification_div():
                     {'label': 'Semi-stable', 'value': 'SemiStable'},
                     {'label': 'Eager', 'value': 'Eager'},
                 ],
-                    value='Complete', id='structured-evaluation-semantics')),
+                    value='Grounded', id='structured-evaluation-semantics')),
             ]),
 
             dbc.Row([
@@ -226,6 +226,9 @@ def generate_random_argumentation_theory(nr_of_clicks: int):
     return '', '', '', '', '', ''
 
 
+# Maximum number of extension buttons the evaluation panel renders.
+MAX_EXTENSION_BUTTONS = 100
+
 # visdcc updates the nodes in place and never refits the view, so large graphs overflow the canvas. Lay the new nodes
 # out in one stabilization run, then freeze physics (otherwise the compact layout keeps drifting past the fitted view)
 # and fit. Physics is switched back on first so the next update is laid out again.
@@ -266,21 +269,25 @@ def create_argumentation_theory(axioms_str: str, ordinary_premises_str: str, str
     except ValueError:
         arg_theory = ArgumentationTheory(ArgumentationSystem({}, {}, [], []), [], [])
 
-    # Generate the graph data for this argumentation theory
-    return get_argumentation_theory_graph_data(arg_theory, ordering_specification, selected_arguments,
-                                               color_blind_mode), FIT_GRAPH_WHEN_STABILIZED
+    # Generate the graph data for this argumentation theory. Marking an extension only recolours the nodes, so keep
+    # the current layout instead of laying the graph out again.
+    graph_data = get_argumentation_theory_graph_data(arg_theory, ordering_specification, selected_arguments,
+                                                     color_blind_mode)
+    if dash.callback_context.triggered_id == 'selected-argument-store-structured':
+        return graph_data, dash.no_update
+    return graph_data, FIT_GRAPH_WHEN_STABILIZED
 
 
 @callback(
     Output('structured-evaluation', 'children'),
-    State('aspic-axioms', 'value'),
-    State('aspic-ordinary-premises', 'value'),
-    State('aspic-strict-rules', 'value'),
-    State('aspic-defeasible-rules', 'value'),
-    State('ordinary-prem-preferences', 'value'),
-    State('defeasible-rule-preferences', 'value'),
-    State('ordering-choice', 'value'),
-    State('ordering-link', 'value'),
+    Input('aspic-axioms', 'value'),
+    Input('aspic-ordinary-premises', 'value'),
+    Input('aspic-strict-rules', 'value'),
+    Input('aspic-defeasible-rules', 'value'),
+    Input('ordinary-prem-preferences', 'value'),
+    Input('defeasible-rule-preferences', 'value'),
+    Input('ordering-choice', 'value'),
+    Input('ordering-link', 'value'),
     Input('structured-evaluation-accordion', 'active_item'),
     Input('structured-evaluation-semantics', 'value'),
     Input('structured-evaluation-strategy', 'value'),
@@ -311,29 +318,35 @@ def evaluate_structured_argumentation_framework(axioms_str: str, ordinary_premis
     arg_framework = arg_theory.create_abstract_argumentation_framework('af', ordering)
     frozen_extensions = get_argumentation_framework_extensions(arg_framework, semantics_specification)
 
-    extensions = [set(frozen_extension) for frozen_extension in frozen_extensions]
+    # Sorted so that extension numbers stay the same between evaluations.
+    extensions = sorted((set(frozen_extension) for frozen_extension in frozen_extensions),
+                        key=lambda extension: sorted(argument.name for argument in extension))
     accepted_formulas = get_accepted_formulas(extensions, acceptance_strategy_specification)
 
-    extension_buttons = []
     formula_arguments = {formula: [] for formula in arg_theory.argumentation_system.language.keys()}
-    for extension in extensions:
-        for argument in extension:
-            assert isinstance(argument, InstantiatedArgument)
-            accepted_formula = argument.conclusion
-            formula_arguments[accepted_formula.s1].append(argument.name)
+    for argument in set().union(*extensions):
+        assert isinstance(argument, InstantiatedArgument)
+        formula_arguments[argument.conclusion.s1].append(argument.name)
 
+    # Some semantics have very many extensions (a theory with 31 arguments can have over a million admissible sets);
+    # rendering a button for each would freeze the browser.
+    extension_buttons = []
+    for extension_number, extension in enumerate(extensions[:MAX_EXTENSION_BUTTONS], start=1):
         out_arguments = {attacked for attacked in arg_framework.arguments
                          if any(argument in arg_framework.get_incoming_defeat_arguments(attacked)
                                 for argument in extension)}
         undecided_arguments = {argument for argument in arg_framework.arguments
                                if argument not in extension and argument not in out_arguments}
-        extension_readable_str = '{' + ', '.join(argument.short_name for argument in extension) + '}'
+        # Full argument names are unreadable for chained rules; the conclusions identify an extension well enough and
+        # clicking the button shows its arguments in the graph.
+        extension_conclusions = sorted({str(argument.conclusion) for argument in extension})
+        extension_readable_str = f'{extension_number}. {{' + ', '.join(extension_conclusions) + '}'
 
         extension_in_str = '+'.join(argument.name for argument in sorted(extension))
         extension_out_str = '+'.join(argument.name for argument in sorted(out_arguments))
         extension_undecided_str = '+'.join(argument.name for argument in sorted(undecided_arguments))
         extension_long_str = '|'.join([extension_in_str, extension_undecided_str, extension_out_str])
-        extension_buttons.append(dbc.Button([extension_readable_str], color='secondary',
+        extension_buttons.append(dbc.Button([extension_readable_str], color='secondary', className='m-1 text-start',
                                             id={'type': 'extension-button', 'index': extension_long_str}))
 
     accepted_formula_buttons = [dbc.Button(formula.s1, color='secondary',
@@ -341,7 +354,9 @@ def evaluate_structured_argumentation_framework(axioms_str: str, ordinary_premis
                                                'index': '+'.join(formula_arguments[formula.s1])})
                                 for formula in sorted(accepted_formulas)]
 
-    return [html.B('The extension(s):'),
+    extension_count_note = f' (showing the first {MAX_EXTENSION_BUTTONS} of {len(extensions)})' \
+        if len(extensions) > MAX_EXTENSION_BUTTONS else f' ({len(extensions)})'
+    return [html.B('The extension(s)' + extension_count_note + ':'),
             html.Div(extension_buttons),
             html.B('The accepted formula(s):'),
             html.Div(accepted_formula_buttons)]
