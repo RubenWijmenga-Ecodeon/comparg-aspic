@@ -129,6 +129,9 @@ dmypy.json
 .DS_Store
 *.pyc
 
+# Stored ASPIC+ theories (served at /22-visualise-aspic/stored/<id>); kept out of git so private models stay private
+stored_theories/
+
 # Sphinx documentation
 docs/_build/
 docs/pyarg.*

@@ -117,6 +117,25 @@ Under the boxes, choose the **ordering** (democratic or elitist, last link or we
 
 `d1` and `d2` rebut each other, and `d3` undercuts `d1` ("penguins are an exception to birds flying"). Under grounded semantics, `-flies` is justified and the argument for `flies` is overruled.
 
+### Stored theories (shortlinks)
+
+`/22-visualise-aspic/stored/<id>` opens the ASPIC+ page with a stored theory already filled in. Theories are JSON files `stored_theories/<id>.json` at the repository root; the id may only contain letters, digits, `-` and `_`. Every key is optional:
+
+```json
+{
+  "axioms": "true",
+  "ordinary_premises": "bird\npenguin",
+  "ordinary_premise_preferences": "",
+  "strict_rules": "",
+  "defeasible_rules": "d1: bird => flies\nd2: penguin => -flies\nd3: penguin => -d1",
+  "defeasible_rule_preferences": "",
+  "ordering_choice": "democratic",
+  "ordering_link": "last_link"
+}
+```
+
+`stored_theories/` is in `.gitignore`, so stored models are not pushed to a public repository; copy the files to the server yourself. A file is read on every page load, so adding or editing one needs no restart.
+
 ### Translating a TOAST model
 
 | TOAST | Here |

@@ -1,5 +1,7 @@
 import json
-from typing import List, Dict
+import re
+from pathlib import Path
+from typing import List, Dict, Optional
 
 import dash
 import dash_bootstrap_components as dbc
@@ -54,7 +56,8 @@ def get_aspic_layout(aspic_setting, structured_evaluation, structured_explanatio
     return dbc.Row([left_column, right_column])
 
 
-def get_aspic_setting_specification_div():
+def get_aspic_setting_specification_div(stored_theory: Optional[Dict[str, str]] = None):
+    theory = stored_theory or {}
     return html.Div(children=[
         dcc.Store(id='selected-argument-store-structured'),
         dbc.Col([
@@ -67,14 +70,15 @@ def get_aspic_setting_specification_div():
             dbc.Row([
                 dbc.Col([dbc.Textarea(id='aspic-axioms',
                                       placeholder='Add one axiom per line. For example:\n p \n -q \n ~r',
-                                      value='', style={'height': '200px'})]),
+                                      value=theory.get('axioms', ''), style={'height': '200px'})]),
                 dbc.Col([dbc.Textarea(id='aspic-ordinary-premises',
                                       placeholder='Add one ordinary premise per line. For example:\n p \n -q \n ~r',
-                                      value='', style={'height': '200px'}), ]),
+                                      value=theory.get('ordinary_premises', ''), style={'height': '200px'}), ]),
                 dbc.Col([dbc.Textarea(id='ordinary-prem-preferences',
                                       placeholder='Add one preference between two premises per line. '
                                                   'For example:\n p < -q \n -q > ~r',
-                                      value='', style={'height': '200px'}), ]),
+                                      value=theory.get('ordinary_premise_preferences', ''),
+                                      style={'height': '200px'}), ]),
             ]),
             dbc.Row([
                 dbc.Col([html.B('Strict rules')]),
@@ -84,15 +88,16 @@ def get_aspic_setting_specification_div():
             dbc.Row([
                 dbc.Col([dbc.Textarea(id='aspic-strict-rules',
                                       placeholder='Add one strict rule per line. For example:\n p->q \n -q -> -r',
-                                      value='', style={'height': '200px'})]),
+                                      value=theory.get('strict_rules', ''), style={'height': '200px'})]),
                 dbc.Col([dbc.Textarea(id='aspic-defeasible-rules',
                                       placeholder='Add one defeasible rule per line, including the rule name. '
                                                   'For example:\n d1: p=>q \n d2: -q => -r',
-                                      value='', style={'height': '200px'}), ]),
+                                      value=theory.get('defeasible_rules', ''), style={'height': '200px'}), ]),
                 dbc.Col([dbc.Textarea(id='defeasible-rule-preferences',
                                       placeholder='Add one preference between two rules per line. '
                                                   'For example:\n d1 < d2',
-                                      value='', style={'height': '200px'}), ]),
+                                      value=theory.get('defeasible_rule_preferences', ''),
+                                      style={'height': '200px'}), ]),
             ]),
             dbc.Row([html.B('Ordering')]),
             dbc.Row([
@@ -100,13 +105,13 @@ def get_aspic_setting_specification_div():
                     options=[
                         {'label': 'Democratic', 'value': 'democratic'},
                         {'label': 'Elitist', 'value': 'elitist'}
-                    ], value='democratic', id='ordering-choice')),
+                    ], value=theory.get('ordering_choice', 'democratic'), id='ordering-choice')),
                 dbc.Col(dbc.Select(
                     options=[
                         {'label': 'Last link', 'value': 'last_link'},
                         {'label': 'Weakest link', 'value': 'weakest_link'}
                     ],
-                    value='last_link', id='ordering-link')),
+                    value=theory.get('ordering_link', 'last_link'), id='ordering-link')),
             ]),
         ])
     ])
@@ -168,13 +173,37 @@ def get_structured_explanation_specification_div():
     ])
 
 
-layout = html.Div(
-    children=[
-        html.H1('Visualisation of ASPIC+ argumentation theories'),
-        get_aspic_layout(get_aspic_setting_specification_div(), get_structured_evaluation_specification_div(),
-                         get_structured_explanation_specification_div())
-    ]
-)
+def get_page_layout(stored_theory: Optional[Dict[str, str]] = None, notice: str = ''):
+    return html.Div(
+        children=[
+            html.H1('Visualisation of ASPIC+ argumentation theories'),
+            html.P(notice, className='text-danger') if notice else None,
+            get_aspic_layout(get_aspic_setting_specification_div(stored_theory),
+                             get_structured_evaluation_specification_div(),
+                             get_structured_explanation_specification_div())
+        ]
+    )
+
+
+layout = get_page_layout()
+
+# Stored theories are JSON files <id>.json in stored_theories/ at the repository root, kept out of git so that private
+# models are not published. Each file holds the text of the input boxes under the keys read by
+# get_aspic_setting_specification_div; missing keys leave a box empty.
+STORED_THEORIES_DIR = Path(__file__).resolve().parents[3] / 'stored_theories'
+STORED_THEORY_ID_PATTERN = re.compile(r'[A-Za-z0-9_-]+')
+
+
+def get_stored_theory_layout(theory_id: str = '', **_other_path_variables):
+    theory_path = STORED_THEORIES_DIR / f'{theory_id}.json'
+    # The id comes from the URL, so only plain names are looked up (no path separators or dots).
+    if not STORED_THEORY_ID_PATTERN.fullmatch(theory_id) or not theory_path.is_file():
+        return get_page_layout(notice=f'There is no stored theory "{theory_id}".')
+    return get_page_layout(json.loads(theory_path.read_text(encoding='utf-8')))
+
+
+dash.register_page(f'{__name__}_stored', path_template='/22-visualise-aspic/stored/<theory_id>',
+                   name='Stored ASPIC+ AT', title='Visualise ASPIC+ AT', layout=get_stored_theory_layout)
 
 
 @callback(
@@ -193,7 +222,9 @@ def setting_choice(choice: str):
     Output('aspic-defeasible-rules', 'value'),
     Output('ordinary-prem-preferences', 'value'),
     Output('defeasible-rule-preferences', 'value'),
-    Input('generate-random-arg-theory-button', 'n_clicks')
+    Input('generate-random-arg-theory-button', 'n_clicks'),
+    # Without this, loading the page would clear the boxes and wipe a stored theory.
+    prevent_initial_call=True
 )
 def generate_random_argumentation_theory(nr_of_clicks: int):
     if nr_of_clicks > 0:
@@ -231,11 +262,17 @@ MAX_EXTENSION_BUTTONS = 100
 
 # visdcc updates the nodes in place and never refits the view, so large graphs overflow the canvas. Lay the new nodes
 # out in one stabilization run, then freeze physics (otherwise the compact layout keeps drifting past the fitted view)
-# and fit. Physics is switched back on first so the next update is laid out again.
-FIT_GRAPH_WHEN_STABILIZED = ("this.net.setOptions({physics: {enabled: true}});"
+# and fit. Physics is switched back on first so the next update is laid out again. Updates that only change colours
+# (marking an extension) keep the current layout: the graph is laid out again only when its nodes, labels or edges
+# change. This is decided in the browser because Dash does not reliably report which input triggered the update.
+FIT_GRAPH_WHEN_STABILIZED = ("const layoutKey = JSON.stringify([this.nn.get().map(n => [n.id, n.label]),"
+                             "this.ee.getIds().sort()]);"
+                             "if (this.lastLayoutKey !== layoutKey) {"
+                             "this.lastLayoutKey = layoutKey;"
+                             "this.net.setOptions({physics: {enabled: true}});"
                              "this.net.once('stabilizationIterationsDone', () => {"
                              "this.net.setOptions({physics: {enabled: false}}); this.net.fit();});"
-                             "this.net.stabilize(400);")
+                             "this.net.stabilize(400);}")
 
 
 @callback(
@@ -250,8 +287,7 @@ FIT_GRAPH_WHEN_STABILIZED = ("this.net.setOptions({physics: {enabled: true}});"
     Input('ordering-choice', 'value'),
     Input('ordering-link', 'value'),
     Input('selected-argument-store-structured', 'data'),
-    State('color-blind-mode', 'on'),
-    prevent_initial_call=True
+    State('color-blind-mode', 'on')
 )
 def create_argumentation_theory(axioms_str: str, ordinary_premises_str: str, strict_rules_str: str,
                                 defeasible_rules_str: str,
@@ -269,13 +305,9 @@ def create_argumentation_theory(axioms_str: str, ordinary_premises_str: str, str
     except ValueError:
         arg_theory = ArgumentationTheory(ArgumentationSystem({}, {}, [], []), [], [])
 
-    # Generate the graph data for this argumentation theory. Marking an extension only recolours the nodes, so keep
-    # the current layout instead of laying the graph out again.
-    graph_data = get_argumentation_theory_graph_data(arg_theory, ordering_specification, selected_arguments,
-                                                     color_blind_mode)
-    if dash.callback_context.triggered_id == 'selected-argument-store-structured':
-        return graph_data, dash.no_update
-    return graph_data, FIT_GRAPH_WHEN_STABILIZED
+    # Generate the graph data for this argumentation theory
+    return get_argumentation_theory_graph_data(arg_theory, ordering_specification, selected_arguments,
+                                               color_blind_mode), FIT_GRAPH_WHEN_STABILIZED
 
 
 @callback(
